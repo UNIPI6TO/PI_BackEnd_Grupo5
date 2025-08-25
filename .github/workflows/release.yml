@@ -1,9 +1,16 @@
 name: Crear Release con incremento de versión
 
 on:
-  push:
+  pull_request:
+    types:
+      - closed
     branches:
-      - main
+      - main 
+      
+
+permissions: 
+  contents: write 
+  pull-requests: read 
 
 jobs:
   release:
@@ -12,14 +19,18 @@ jobs:
     steps:
     - name: Checkout del repositorio
       uses: actions/checkout@v3
-
+    - name: Configure Git User
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
     - name: Instalar jq
       run: sudo apt-get install jq
 
     - name: Leer y actualizar versión en appsettings.json
       id: update_version
       run: |
-        VERSION=$(jq -r '.Application.Version' appsettings.json)
+        FILE="APITestPyscoIA/appsettings.json"
+        VERSION=$(jq -r '.Application.Version' $FILE)
         echo "Versión actual: $VERSION"
         MAJOR=$(echo $VERSION | cut -d. -f1)
         MINOR=$(echo $VERSION | cut -d. -f2)
@@ -31,22 +42,28 @@ jobs:
         echo "Nueva versión: $NEW_VERSION"
 
         # Actualizar appsettings.json
-        jq --arg v "$NEW_VERSION" '.Application.Version = $v' appsettings.json > temp.json && mv temp.json appsettings.json
+        jq --arg v "$NEW_VERSION" '.Application.Version = $v' $FILE > temp.json && mv temp.json $FILE
 
         echo "VERSION=$NEW_VERSION" >> $GITHUB_ENV
 
-    - name: Commit de la nueva versión
+    - name: Configurar Git y actualizar remote
+      env:
+        TOKEN: ${{ secrets.GH_PAT }}
       run: |
         git config user.name "github-actions"
         git config user.email "github-actions@github.com"
-        git add appsettings.json
-        git commit -m "Incrementar versión a $VERSION"
-        git push
+        git remote set-url origin https://x-access-token:${TOKEN}@github.com/${{ github.repository }}
+
+    - name: Commit de la nueva versión
+      run: |
+        git add APITestPyscoIA/appsettings.json
+        git commit -m "Incrementar versión a ${{ env.VERSION }}"
+        git push origin main
 
     - name: Crear tag con la nueva versión
       run: |
-        git tag -a "v${VERSION}" -m "Release v${VERSION}"
-        git push origin "v${VERSION}"
+        git tag -a "v${{ env.VERSION }}" -m "Release v${{ env.VERSION }}"
+        git push origin "v${{ env.VERSION }}"
 
     - name: Crear release en GitHub
       uses: softprops/action-gh-release@v1
@@ -56,4 +73,4 @@ jobs:
         body: |
           Release generado automáticamente con versión incrementada.
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GH_PAT }}
